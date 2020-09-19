@@ -5,6 +5,9 @@
 # Copyright (C) 2020 Sami Olmari, Oy Olmari Ab
 #
 # This software is licensed under GPL2, see LICENSE
+#
+# Usage: ssl-updater-example.com.sh [force]
+# Returns status or issue-log (stdout) and new cert files.
 
 # User defined variables
 SSL_DIR="/var/www/.ssl/example.com"            # Directory where certificates etc resides.
@@ -91,7 +94,7 @@ function build_cert_chains () {
   ${HOME}/cert-chain-resolver/cert-chain-resolver --include-system --intermediate-only --output ${SSL_DIR}/fullchain.pem ${SSL_DIR}/chain.pem || return 1
 }
 
-function reload-webserver () {
+function restart-webserver () {
   echo "Restarting webserver"
   sudo /bin/systemctl restart nginx.service || { echo "Failed to restart webserver!"; return 1; }
 }
@@ -103,5 +106,5 @@ check_cert_exist || exit 1
 check_needs_update $1 || exit 0
 do_cert_update || exit 1
 build_cert_chains || exit 1
-reload-webserver || exit 1
+restart-webserver || exit 1
 echo "Finished"
