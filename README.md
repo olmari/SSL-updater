@@ -12,6 +12,10 @@ Idea is that ssl-updater.sh per certificate is run as daily cronjob and it will 
 ## ssl-updater.sh usage:
 Run daily as cron job, can be run manually. Takes one optional parameter, "force", to attempt certificate renewal instantly.
 
+## sha512passwd.sh usage:
+Generates crypt()-compatible SHA-512 ($6$) passwords with maximum length salt.
+Usage: sha512passwd USER [PASS]                                          
+
 ## To-do:
  - Document system group addition, so www-data and script can share needed file permissions
  - Explain file structure and permissioning for certificates and related files under /var/www/
