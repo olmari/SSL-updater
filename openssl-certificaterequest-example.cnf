@@ -1,0 +1,48 @@
+# Olmari's OpenSSL example configuration file for CSR.
+
+###
+# Edit below as needed
+###
+
+# Fully qualified domain name to request certificate for
+FQDN    = domain.example.com
+
+# SAN/SNI domain names, add DNS.2, DNS.3 and so on to the list as needed
+# !!! Keep the DNS.1 as is, needs to match FQDN !!!
+
+[ SAN ]
+DNS.1   = $FQDN
+DNS.2   = subdomain2.example.com
+
+[ dn ]
+# !! Keep CN as is, needs to match FQDN !!
+# Rest is CSR/Certificate information
+
+CN              = $FQDN					# Common name, already set above in FQDN, for ACME this is only required and used field.
+
+# Uncomment and use these as needed, some Extended Validation (EV) certificate providers wants some of these too, check from them. LE/ACME does not care for these usually.
+
+#C               = FI					# Country code shortform
+#L               = City					# Locality, usually city
+#ST              = SomeState			# State or province name
+#O               = Example Corporation	# Organization Name, 
+#emailAddress    = email@example.com	# Email address
+
+###
+# !! No user serviceable parts below !!
+#
+# Do NOT edit below
+###
+
+[ req ]
+default_md          = sha256
+prompt              = no
+encrypt_key         = no
+distinguished_name  = dn
+req_extensions      = req_ext
+
+[ req_ext ]
+basicConstraints    = CA:FALSE
+keyUsage            = nonRepudiation, digitalSignature, keyEncipherment
+tlsfeature          = status_request # OCSP must-staple
+subjectAltName      = @SAN

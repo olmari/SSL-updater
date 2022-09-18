@@ -2,12 +2,18 @@
 
 # Bash-script for automating checking and renewing of SSL-certificates, the least permissions needed -way
 #
-# Copyright (C) 2020 Sami Olmari, Oy Olmari Ab
+# Copyright (C) 2022 Sami Olmari, Oy Olmari Ab
 #
 # This software is licensed under GPL2, see LICENSE
 #
 # Usage: ssl-updater-example.com.sh [force]
 # Returns status or issue-log (stdout) and new cert files.
+
+# User defined constants
+# Should work with all ACME-servers, Lets Encrypt as example
+
+ACME_PRODUCTION_SERVER="https://acme-v02.api.letsencrypt.org/directory"
+ACME_TEST_SERVER="https://acme-staging-v02.api.letsencrypt.org/directory"
 
 # User defined variables
 SSL_DIR="/var/www/.ssl/example.com"            # Directory where certificates etc resides.
@@ -79,19 +85,21 @@ function check_needs_update () {
 function do_cert_update () {
   if [ "${TEST_MODE^^}" == "TRUE" ];
   then
-    echo "Running Acme-tiny in test mode"
-    python ${HOME}/acme-tiny/acme_tiny.py --directory-url https://acme-staging-v02.api.letsencrypt.org/directory --contact ${LE_CONTACT} --account-key ${HOME_DIR}/account.key --csr ${SSL_DIR}/domain.csr --acme-dir ${ACME_DIR} > ${SSL_DIR}/signed.crt || return 1
+    local _DIRECTORY_URL="$ACME_TEST_SERVER"
+    local _MODE="test"
   else
-    echo "Running Acme-tiny in production mode"
-    python ${HOME}/acme-tiny/acme_tiny.py --contact ${LE_CONTACT} --account-key ${HOME}/account.key --csr ${SSL_DIR}/domain.csr --acme-dir ${ACME_DIR} > ${SSL_DIR}/signed.crt || return 1
+    local _DIRECTORY_URL="$ACME_PRODUCTION_SERVER"
+    local _MODE="production"
   fi
+  echo "Running Acme-tiny against ${_MODE} server"
+  acme-tiny --directory_url ${_DIRECTORY_URL} --contact ${LE_CONTACT} --account-key ${HOME}/account.key --csr ${SSL_DIR}/domain.csr --acme-dir ${ACME_DIR} > ${SSL_DIR}/signed.crt || return 1
 }
 
 function build_cert_chains () {
   echo "Copying successfully received certificate into ${SSL_DIR}/chain.pem"
   cat ${SSL_DIR}/signed.crt > ${SSL_DIR}/chain.pem
   echo "Running Cert-chain-resolver"
-  ${HOME}/cert-chain-resolver/cert-chain-resolver --include-system --intermediate-only --output ${SSL_DIR}/fullchain.pem ${SSL_DIR}/chain.pem || return 1
+  ${HOME}/cert-chain-resolver/cert-chain-resolver --include-system --intermediate-only --output ${SSL_DIR}/rootchain.pem ${SSL_DIR}/chain.pem || return 1
 }
 
 function restart-webserver () {
