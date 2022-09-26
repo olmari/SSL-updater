@@ -20,7 +20,9 @@ DNS.2   = subdomain2.example.com
 
 CN              = $FQDN					# Common name, already set above in FQDN, for ACME this is only required and used field.
 
-# Uncomment and use these as needed, some Extended Validation (EV) certificate providers wants some of these too, check from them. LE/ACME does not care for these usually.
+# Uncomment and use these as needed, some Extended Validation (EV) certificate providers wants
+# some of these too, check from them. For example Lets Encrypt does not care for these usually
+# as they provide Domain Validation (DV) only
 
 #C               = FI					# Country code shortform
 #L               = City					# Locality, usually city

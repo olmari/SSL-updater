@@ -9,22 +9,43 @@
 # Usage: ssl-updater-example.com.sh [force]
 # Returns status or issue-log (stdout) and new cert files.
 
-# User defined constants
-# Should work with all ACME-servers, Lets Encrypt as example
+##
+# User defined variables
+##
+CONTACT="mailto:techdata@example.com"         # Where ACME CA sends notifications.
+DAYS_TO_EXPIRE=30                             # Renew when cert expires in this many days, or ...
+AFTER_DAYS_OLD=30                             # ... renew after cert is this old in days.
+TEST_MODE=false                               # When true, use staging server, gives snakeoil, does not ratelimit.
 
+##
+# User defined constants
+##
+
+# ACME endpoints, Should work with all ACME-servers, Lets Encrypt as example
 ACME_PRODUCTION_SERVER="https://acme-v02.api.letsencrypt.org/directory"
 ACME_TEST_SERVER="https://acme-staging-v02.api.letsencrypt.org/directory"
 
-# User defined variables
-SSL_DIR="/var/www/.ssl/example.com"            # Directory where certificates etc resides.
-ACME_DIR="/var/www/.well-known/acme-challenge" # Directory where acme-challenge token is put.
-LE_CONTACT="mailto:contact@example.com"        # Where Lets encrypt sends notifications.
-DAYS_TO_EXPIRE=30                              # Renew when cert expires in this many days, or ...
-AFTER_DAYS_OLD=30                              # ... renew after cert is this old in days.
-TEST_MODE=false                                # When true, use staging server, gives snakeoil, does not ratelimit.
+# Certificate and acme-challenge directories
+SSL_DIR="/var/www/ssl/example.com"            # Certificate files
+ACME_DIR="/var/www/acme-challenges"           # Acme-challenge tokens
 
-# Global function variables
+# Certificate file names
+SIGNED=signed.crt                             # Acme-tiny output on successful order
+CHAIN=chain.crt                               # Leaf + intermediate certificate chain for webserver, built from SIGNED.
+ROOTCHAIN=rootchain.crt                       # Intermediate + root certificate chain, built from SIGNED, for validating OSCP-response
+CSR=domain.csr                                # Certificate Sign Request (CSR), generate beforehand
+ACCOUNTKEY=${HOME}/account.key                # Account key full location for ACME CA, generate beforehand
+
+##
+# System constants
+##
+
+# Command to get current time in unix-time
 NOW_EPOCH=$( date +%s )
+
+##
+# Program
+##
 
 function check_cli_parameters () {
   if [ -n "$1" ];
@@ -39,24 +60,24 @@ function check_cli_parameters () {
 }
 
 function check_cert_exist () {
-  if [ -e ${SSL_DIR}/chain.pem ];
+  if [ -e ${SSL_DIR}/${CHAIN} ];
   then
     return 0
   else
-    echo "Certificate file: ${SSL_DIR}/chain.pem does not exist!"
+    echo "Certificate file: ${SSL_DIR}/${CHAIN} does not exist!"
     return 1
   fi
 }
 
 function check_cert_startdays () {
-  local start_date=$( echo | openssl x509 -inform pem -noout -startdate -in ${SSL_DIR}/chain.pem | cut -d "=" -f 2 )
+  local start_date=$( echo | openssl x509 -inform pem -noout -startdate -in ${SSL_DIR}/${CHAIN} | cut -d "=" -f 2 )
   local start_epoch=$( date -d "$start_date" +%s )
   local start_days="$(( ($NOW_EPOCH - $start_epoch) / (3600 * 24) ))"
   echo $start_days
 }
 
 function check_cert_enddays () {
-  local expiry_date=$( echo | openssl x509 -inform pem -noout -enddate -in ${SSL_DIR}/chain.pem | cut -d "=" -f 2 )
+  local expiry_date=$( echo | openssl x509 -inform pem -noout -enddate -in ${SSL_DIR}/${CHAIN} | cut -d "=" -f 2 )
   local expiry_epoch=$( date -d "$expiry_date" +%s )
   local expiry_days="$(( ($expiry_epoch - $NOW_EPOCH) / (3600 * 24) ))"
   echo $expiry_days
@@ -92,19 +113,19 @@ function do_cert_update () {
     local _MODE="production"
   fi
   echo "Running Acme-tiny against ${_MODE} server"
-  acme-tiny --directory_url ${_DIRECTORY_URL} --contact ${LE_CONTACT} --account-key ${HOME}/account.key --csr ${SSL_DIR}/domain.csr --acme-dir ${ACME_DIR} > ${SSL_DIR}/signed.crt || return 1
+  acme-tiny --directory-url ${_DIRECTORY_URL} --contact ${CONTACT} --account-key ${ACCOUNTKEY} --csr ${SSL_DIR}/${CSR} --acme-dir ${ACME_DIR} > ${SSL_DIR}/${SIGNED} || return 1
 }
 
 function build_cert_chains () {
-  echo "Copying successfully received certificate into ${SSL_DIR}/chain.pem"
-  cat ${SSL_DIR}/signed.crt > ${SSL_DIR}/chain.pem
+  echo "Copying successfully received certificate into ${SSL_DIR}/${CHAIN}"
+  cat ${SSL_DIR}/${SIGNED} > ${SSL_DIR}/${CHAIN}
   echo "Running Cert-chain-resolver"
-  ${HOME}/cert-chain-resolver/cert-chain-resolver --include-system --intermediate-only --output ${SSL_DIR}/rootchain.pem ${SSL_DIR}/chain.pem || return 1
+  ${HOME}/cert-chain-resolver/cert-chain-resolver --include-system --intermediate-only --output ${SSL_DIR}/${ROOTCHAIN} ${SSL_DIR}/${CHAIN} || return 1
 }
 
 function restart-webserver () {
   echo "Restarting webserver"
-  sudo /bin/systemctl restart nginx.service || { echo "Failed to restart webserver!"; return 1; }
+  sudo /bin/systemctl reload-or-restart nginx.service || { echo "Failed to restart webserver!"; return 1; }
 }
 
 # Main program
