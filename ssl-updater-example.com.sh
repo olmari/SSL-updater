@@ -2,7 +2,7 @@
 
 # Bash-script for automating checking and renewing of SSL-certificates, the least permissions needed -way
 #
-# Copyright (C) 2022 Sami Olmari, Oy Olmari Ab
+# Copyright (C) 2024 Sami Olmari, IT-Olmari ry, Hacklab Finland ry
 #
 # This software is licensed under GPL2, see LICENSE
 #
@@ -12,10 +12,10 @@
 ##
 # User defined variables
 ##
-CONTACT="mailto:techdata@example.com"         # Where ACME CA sends notifications.
-DAYS_TO_EXPIRE=30                             # Renew when cert expires in this many days, or ...
-AFTER_DAYS_OLD=30                             # ... renew after cert is this old in days.
-TEST_MODE=false                               # When true, use staging server, gives snakeoil, does not ratelimit.
+CONTACT="mailto:techdata@example.com"          # Where ACME CA sends notifications.
+DAYS_TO_EXPIRE=30                              # Renew when cert expires in this many days, or ...
+AFTER_DAYS_OLD=30                              # ... renew after cert is this old in days.
+TEST_MODE=false                                # When true, use staging server, gives snakeoil, does not ratelimit.
 
 ##
 # User defined constants
@@ -26,15 +26,16 @@ ACME_PRODUCTION_SERVER="https://acme-v02.api.letsencrypt.org/directory"
 ACME_TEST_SERVER="https://acme-staging-v02.api.letsencrypt.org/directory"
 
 # Certificate and acme-challenge directories
-SSL_DIR="/var/www/ssl/example.com"            # Certificate files
-ACME_DIR="/var/www/acme-challenges"           # Acme-challenge tokens
+SSL_DIR="/var/www/ssl/example.com"             # Certificate files
+ACME_DIR="/var/www/acme-challenges"            # Acme-challenge tokens
 
 # Certificate file names
-SIGNED=signed.crt                             # Acme-tiny output on successful order
-CHAIN=chain.crt                               # Leaf + intermediate certificate chain for webserver, built from SIGNED.
-ROOTCHAIN=rootchain.crt                       # Intermediate + root certificate chain, built from SIGNED, for validating OSCP-response
-CSR=domain.csr                                # Certificate Sign Request (CSR), generate beforehand
-ACCOUNTKEY=${HOME}/account.key                # Account key full location for ACME CA, generate beforehand
+SIGNED=signed.crt                              # Acme-tiny output on successful order
+CHAIN=chain.crt                                # Leaf + intermediate chain for webserver, built from signed.
+ROOTCHAIN=rootchain.crt                        # Intermediate + root certificate, built from signed, for validating OSCP-response
+CSR=domain.csr                                 # Certificate Sign Request (CSR), generate beforehand
+STAPLE=ocsp.staple
+ACCOUNTKEY=${HOME}/account.key                 # Account key for ACME CA, generate beforehand
 
 ##
 # System constants
@@ -123,17 +124,24 @@ function build_cert_chains () {
   ${HOME}/cert-chain-resolver/cert-chain-resolver --include-system --intermediate-only --output ${SSL_DIR}/${ROOTCHAIN} ${SSL_DIR}/${CHAIN} || return 1
 }
 
-function restart-webserver () {
-  echo "Restarting webserver"
-  sudo /bin/systemctl reload-or-restart nginx.service || { echo "Failed to restart webserver!"; return 1; }
+function fetch_ocsp_staple () {
+  echo "Fetching OCSP staple response"
+  openssl ocsp -no_nonce -url $(openssl x509 -noout -ocsp_uri -in ${SSL_DIR}/${CHAIN}) -issuer ${SSL_DIR}/${ROOTCHAIN} -cert ${SSL_DIR}/${CHAIN} -verify_other ${SSL_DIR}/${ROOTCHAIN} -respout ${SSL_DIR}/${STAPLE} || return 1
+  reload-webserver || exit 1
+}
+
+function reload-webserver () {
+  echo "Reloading webserver"
+  sudo /bin/systemctl reload nginx.service || { echo "Failed to reload webserver!"; exit 1; }
+  echo "Finished"
+  exit 0
 }
 
 # Main program
 check_cli_parameters $1 || exit 1
 echo "$(date -Iminutes)"
 check_cert_exist || exit 1
-check_needs_update $1 || exit 0
-do_cert_update || exit 1
+check_needs_update $1 || fetch_ocsp_staple
+do_cert_update || fetch_ocsp_staple
 build_cert_chains || exit 1
-restart-webserver || exit 1
-echo "Finished"
+fetch_ocsp_staple || exit 1
